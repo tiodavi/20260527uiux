@@ -24,7 +24,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (正式完美版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (萬能相容版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -196,6 +196,12 @@ def index():
                     start_st = form_data['start_station']
                     end_st = form_data['end_station']
                     
+                    # 💡 常規台鐵車種 ID 對照表 (防止官方 JSON 只丟代碼過來)
+                    TYPE_MAP = {
+                        '1': '自強號', '2': '太魯閣', '3': '普悠瑪', '4': '新自強',
+                        '5': '莒光號', '6': '復興號', '7': '區間快車', '10': '區間車'
+                    }
+                    
                     for train in all_timetables:
                         stop_times = train.get('StopTimes', [])
                         
@@ -203,15 +209,36 @@ def index():
                         end_index = next((i for i, stop in enumerate(stop_times) if stop.get('StationID') == end_st), -1)
                         
                         if start_index != -1 and end_index != -1 and start_index < end_index:
-                            # 🎯 【關鍵欄位修正】相容於 Today 總表的深層欄位取值邏輯
-                            info = train.get('DailyTrainInfo', {})
+                            # 🎯 【終極防呆比對】將所有已知的 TDX V3 欄位變形一網打盡
+                            info = train.get('DailyTrainInfo', train.get('dailyTrainInfo', {}))
+                            if not info:
+                                info = train  # 如果在外層就直接指向自己
                             
-                            # 部分接口車次號碼為 'trainNo' 或 'TrainNo'，做個相容防呆
-                            t_no = info.get('trainNo') or info.get('TrainNo') or '000'
+                            # 1. 抓取車次 (相容大小寫與外層結構)
+                            t_no = (
+                                info.get('TrainNo') or 
+                                info.get('trainNo') or 
+                                train.get('TrainNo') or 
+                                train.get('trainNo') or 
+                                '000'
+                            )
                             
-                            # 取得車種名稱的中文 (自強、莒光、區間等)
-                            t_type_name = info.get('TrainTypeName', {})
-                            t_type = t_type_name.get('Zh_tw') if isinstance(t_type_name, dict) else info.get('TrainTypeID', '未知車型')
+                            # 2. 抓取車種名稱 (多層 fallback 處理)
+                            t_type = "對號車"
+                            t_type_name = info.get('TrainTypeName', info.get('trainTypeName'))
+                            
+                            if isinstance(t_type_name, dict):
+                                t_type = t_type_name.get('Zh_tw', t_type_name.get('en', '未知車種'))
+                            elif isinstance(t_type_name, str) and t_type_name:
+                                t_type = t_type_name
+                            else:
+                                # 如果沒有名稱，試試看有沒有代碼
+                                type_id = str(info.get('TrainTypeID', info.get('trainTypeID', '')))
+                                if type_id in TYPE_MAP:
+                                    t_type = TYPE_MAP[type_id]
+                                else:
+                                    # 再不行的話試試看 TrainClass
+                                    t_type = info.get('TrainClass', info.get('trainClass', '未知車種'))
                             
                             filtered_trains.append({
                                 'train_type': t_type,
@@ -220,7 +247,7 @@ def index():
                                 'arr_time': stop_times[end_index].get('ArrivalTime', '00:00')
                             })
                     
-                    # 依出發時間或抵達時間排序
+                    # 依時段類型排序
                     if form_data['time_type'] == 'arrival':
                         train_data = sorted(filtered_trains, key=lambda x: x['arr_time'])
                     else:
