@@ -136,39 +136,40 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """新制 OIDC 專屬動態路由機制：自動解析 Client ID 前綴，徹底解決 404 迷路問題"""
-    # 確保清除前後空白
+    """2026 新制 OIDC 官方標準 Token 驗證機制"""
+    # 🎯 官方規定：新制 OIDC 全球會員統一由 /basic/ 入口進行驗證，不可使用個人自訂路由
+    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
+    
+    # 💡 確保完全清除從瀏覽器複製時，可能不小心抓到的空白、換行或特殊字元
     c_id = CLIENT_ID.strip() if CLIENT_ID else ""
     c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
     
     if not c_id or "你的" in c_id:
-        return None, "請先填入正確的 CLIENT_ID"
+        return None, "請先在程式碼或 Vercel 後台填入正確的 CLIENT_ID！"
 
-    # 🎯 【核心修正】自動從 "tioplato001-xxxx-xxxx" 中切出 "tioplato001"
-    try:
-        realm_prefix = c_id.split('-')[0]
-    except Exception:
-        realm_prefix = "basic" # 備用防錯
-    
-    # 🚀 動態拼裝出你帳號專屬的 TDX 大門網址
-    auth_url = f"https://tdx.transportdata.tw/auth/realms/{realm_prefix}/protocol/openid-connect/token"
-    
+    # 🚀 新制標準參數： grant_type 必須為 client_credentials
     payload = {
         'grant_type': 'client_credentials',
         'client_id': c_id,
         'client_secret': c_secret
     }
+    
+    # 傳送表單格式
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
     try:
         response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
+        
         if response.status_code == 200:
             return response.json().get('access_token'), None
         else:
-            # 如果這時候網址對了，密碼複製錯，會噴出 HTTP 401 Unauthorized
-            return None, f"HTTP {response.status_code} - {response.text} (嘗試請求網址: {auth_url})"
+            # 💡 重點判斷：
+            # 如果此處噴出 HTTP 401 Unauthorized，代表網址完全對了！請去後台重新檢查密碼。
+            # 如果噴出 HTTP 400 Bad Request，代表參數或帳號尚未開通啟用。
+            return None, f"HTTP {response.status_code} - {response.text}"
+            
     except Exception as e:
-        return None, f"連線異常: {str(e)}"
+        return None, f"連線至 TDX 驗證伺服器發生異常: {str(e)}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
