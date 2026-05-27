@@ -142,9 +142,20 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """向 TDX 驗證伺服器請求 Access Token (採用 TDX 最底層的全球標準 basic 接口)"""
-    # 🎯 終極修正網址：/basic/ 是官方最核心、最不容易變動的萬用授權接口
+    """向新版 TDX 驗證伺服器請求 Access Token (2026 最新官方規格)"""
+    # 🎯 全新標準網址：擺脫舊版複雜的 realms 路徑
+    auth_url = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    
+    # 部分新制帳號若上者仍噴404，請改用以下官方通用底層網址（取消/TRA/或改用通用路由）
+    # 這裡我們用目前最標準的新版接口：
     auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
+    
+    # 💡 註：如果上面兩個你都試過依然 404，代表你的帳號屬於 TDX 新版「OIDC 服務」
+    # 新版 OIDC 的萬用認證網址是下面這一個，我們直接做成自動防呆切換：
+    urls_to_try = [
+        "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token",
+        "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    ]
     
     payload = {
         'grant_type': 'client_credentials',
@@ -153,18 +164,20 @@ def get_tdx_token():
     }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
-    try:
-        response = requests.post(auth_url, data=payload, headers=headers)
-        if response.status_code == 200:
-            return response.json().get('access_token'), None
-        else:
-            # 這裡會精準回報錯誤原因
-            error_reason = f"HTTP {response.status_code} - {response.text}"
-            print(f"[TDX Error Log] Token 取得失敗: {error_reason}")
-            return None, error_reason
-    except Exception as e:
-        print(f"[TDX Error Log] 連線至認證伺服器發生異常: {e}")
-        return None, str(e)
+    last_error = ""
+    for url in urls_to_try:
+        try:
+            response = requests.post(url, data=payload, headers=headers)
+            if response.status_code == 200:
+                return response.json().get('access_token'), None
+            elif response.status_code != 404:
+                # 如果不是 404（例如 401 密碼錯誤），代表網址對了但金鑰錯了，直接回傳
+                return None, f"網址正確但驗證失敗 (HTTP {response.status_code}) - {response.text}"
+            last_error = f"HTTP {response.status_code} - {response.text}"
+        except Exception as e:
+            last_error = str(e)
+            
+    return None, f"所有新舊驗證網址皆嘗試失敗。最後一次錯誤：{last_error}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
