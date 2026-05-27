@@ -4,11 +4,11 @@ from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
-# 🔑 優先從 Vercel 後台的 Environment Variables 讀取金鑰，若本機測試則改填在後方的預設值中
-CLIENT_ID = os.environ.get('TDX_CLIENT_ID', '你的_CLIENT_ID')
-CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '你的_CLIENT_SECRET')
+# 🔑 請點擊「管理」按鈕，完整複製這兩個欄位
+CLIENT_ID = os.environ.get('TDX_CLIENT_ID', 'tioplato001-4436c997-a725-410c')
+CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '0d4ec8e5-d9ba-4324-9363-df96dddd05d8')
 
-# 🎨 整合你 Figma 設計稿的單一 HTML + Tailwind CSS 範本
+# 🎨 完美還原 Figma 設計稿的單一 HTML + Tailwind CSS 範本
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -23,7 +23,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (Vercel 穩定版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (新制 OIDC 版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -54,9 +54,7 @@ HTML_TEMPLATE = """
       </div>
       
       <button type="button" onclick="swapStations()" class="bg-[#4B5563] p-2 rounded hover:bg-gray-500 self-end mb-1 cursor-pointer">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-        </svg>
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
       </button>
     </div>
 
@@ -86,7 +84,7 @@ HTML_TEMPLATE = """
 
   {% if error_msg %}
     <div class="w-full max-w-md bg-red-100 border border-red-400 text-red-700 p-3 rounded text-sm shadow">
-      <p class="font-bold">❌ 發生錯誤：</p>
+      <p class="font-bold">❌ 驗證狀態提示：</p>
       <p class="text-xs mt-1 bg-white p-2 rounded font-mono">{{ error_msg }}</p>
     </div>
   {% endif %}
@@ -118,16 +116,12 @@ HTML_TEMPLATE = """
     function swapStations() {
       const start = document.getElementById('start_station');
       const end = document.getElementById('end_station');
-      const temp = start.value;
-      start.value = end.value;
-      end.value = temp;
+      const temp = start.value; start.value = end.value; end.value = temp;
     }
 
     function toggleTimeType(type) {
       document.getElementById('time_type').value = type;
-      const btnDept = document.getElementById('btn_dept');
-      const btnArr = document.getElementById('btn_arr');
-      
+      const btnDept = document.getElementById('btn_dept'); const btnArr = document.getElementById('btn_arr');
       if (type === 'departure') {
         btnDept.className = "flex-1 bg-[#1D4ED8] py-1.5 text-center font-medium cursor-pointer";
         btnArr.className = "flex-1 bg-[#4B5563] py-1.5 text-center text-gray-300 hover:bg-gray-500 cursor-pointer";
@@ -142,62 +136,31 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """TDX 終極防呆驗證：窮舉所有可能網址，並防範複製空白導致的 404/401 錯誤"""
-    global CLIENT_ID, CLIENT_SECRET
-    
-    # 【防呆關鍵】自動清除可能不小心複製到的換行符號或前後空格
-    c_id = CLIENT_ID.strip() if CLIENT_ID else ""
-    c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
-    
-    # 檢查是否根本沒有填入有效金鑰
-    if not c_id or "你的" in c_id or not c_secret or "你的" in c_secret:
-        return None, f"偵測到金鑰尚未正確設定！目前讀取到的 Client ID 長度為: {len(c_id)}"
-
-    # 🎯 2026年 TDX 歷史至今所有新舊、大小寫、各專案類型的 Token 接口全列表
-    urls_to_try = [
-        "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token",
-        "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token",
-        "https://tdx.transportdata.tw/auth/realms/number/protocol/openid-connect/token"
-    ]
+    """新制 OIDC 專用 Token 交換機制"""
+    # 🎯 新制 OIDC 的核心認證網址，必須加上 /basic/ 或者是你 ClientId 的前綴
+    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
     
     payload = {
         'grant_type': 'client_credentials',
-        'client_id': c_id,
-        'client_secret': c_secret
+        'client_id': CLIENT_ID.strip(),
+        'client_secret': CLIENT_SECRET.strip()
     }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
-    debug_log = []
-    
-    for url in urls_to_try:
-        try:
-            response = requests.post(url, data=payload, headers=headers, timeout=5)
-            if response.status_code == 200:
-                return response.json().get('access_token'), None
-            
-            # 如果不是 404，通常代表網址找對了，是密碼被拒絕
-            if response.status_code != 404:
-                return None, f"網址對了但認證被拒 (HTTP {response.status_code})。訊息: {response.text} (打中網址: {url})"
-                
-            debug_log.append(f"{url.split('/realms/')[1].split('/')[0]} 接口 -> 404")
-        except Exception as e:
-            debug_log.append(f"連線異常: {str(e)}")
-            
-    # 如果全部都 404，極度可能是帳號被鎖、尚未啟用、或是跨網域被 Vercel IP 擋掉
-    return None, f"嘗試了所有認證入口皆回報 404。詳細路徑測試結果: {', '.join(debug_log)} | 目前讀取的 Client_ID 前4碼: {c_id[:4]}... (長度: {len(c_id)})"
+    try:
+        response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json().get('access_token'), None
+        else:
+            return None, f"HTTP {response.status_code} - {response.text}"
+    except Exception as e:
+        return None, str(e)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     train_data = None
     error_msg = None
-    
-    # 初始化/保持表單資料
-    form_data = {
-        'start_station': '1000',
-        'end_station': '3300',
-        'search_date': '2026-05-27',
-        'time_type': 'departure'
-    }
+    form_data = {'start_station': '1000', 'end_station': '3300', 'search_date': '2026-05-27', 'time_type': 'departure'}
 
     if request.method == 'POST':
         form_data['start_station'] = request.form.get('start_station')
@@ -205,31 +168,26 @@ def index():
         form_data['search_date'] = request.form.get('search_date')
         form_data['time_type'] = request.form.get('time_type')
 
-        # 1. 取得通行 Token
         token, api_error = get_tdx_token()
         
         if token:
-            # 2. 呼叫台鐵起迄站時刻表 API
             api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Accept': 'application/json'
             }
             try:
-                api_res = requests.get(api_url, headers=headers)
+                api_res = requests.get(api_url, headers=headers, timeout=10)
                 if api_res.status_code == 200:
                     raw_data = api_res.json().get('TrainTimetables', [])
-                    # 依據各車次的出發時間進行升冪排序
                     train_data = sorted(raw_data, key=lambda x: x['StopTimes'][0]['DepartureTime'])
                 else:
                     error_msg = f"時刻表 API 請求失敗 (HTTP {api_res.status_code}): {api_res.text}"
             except Exception as e:
-                error_msg = f"呼叫時刻表 API 時發生連線錯誤: {e}"
+                error_msg = f"連線錯誤: {e}"
         else:
-            # 將完整的錯誤原委直接渲染在網頁上，方便快速 Debug
-            error_msg = f"無法取得認證 Token，請確認金鑰。詳細拒絕原因：{api_error}"
+            error_msg = f"Token 取得失敗。請確認『管理』內複製出來的密碼是否正確。錯誤訊息：{api_error}"
 
     return render_template_string(HTML_TEMPLATE, train_data=train_data, error_msg=error_msg, form_data=form_data)
 
-# 設定給 Vercel 運作時的 debug 模式
 app.debug = True
