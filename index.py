@@ -9,7 +9,7 @@ app = Flask(__name__)
 CLIENT_ID = os.environ.get('TDX_CLIENT_ID', '')
 CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '')
 
-# 🎨 完美還原 Figma 設計稿，並內嵌「快捷鍵」、「Loading動畫」與「前端防呆」的單一網頁範本
+# 🎨 整合「時間控制、車站/日期快捷鍵、Loading動畫、防呆攔截」的頂配 HTML 範本
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -24,7 +24,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" id="searchForm" onsubmit="return validateForm()" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (極致單檔版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (時間控制版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -43,7 +43,7 @@ HTML_TEMPLATE = """
             <option value="1000" {% if form_data.start_station == '1000' %}selected{% endif %}>1000-臺北</option>
             <option value="1060" {% if form_data.start_station == '1060' %}selected{% endif %}>1060-桃園</option>
             <option value="3300" {% if form_data.start_station == '3300' %}selected{% endif %}>3300-臺中</option>
-            <option value="4220" {% if form_data.start_station == '4220' %}selected{% endif %}>4220-臺南</option>
+            <option value="4220" {% if form_data.start_station == '4220' %}selected{% endif %}>4220-台南</option>
             <option value="4400" {% if form_data.start_station == '4400' %}selected{% endif %}>4400-高雄</option>
             <option value="7000" {% if form_data.start_station == '7000' %}selected{% endif %}>7000-花蓮</option>
           </select>
@@ -62,7 +62,7 @@ HTML_TEMPLATE = """
             <option value="1000" {% if form_data.end_station == '1000' %}selected{% endif %}>1000-臺北</option>
             <option value="1060" {% if form_data.end_station == '1060' %}selected{% endif %}>1060-桃園</option>
             <option value="3300" {% if form_data.end_station == '3300' %}selected{% endif %}>3300-臺中</option>
-            <option value="4220" {% if form_data.end_station == '4220' %}selected{% endif %}>4220-臺南</option>
+            <option value="4220" {% if form_data.end_station == '4220' %}selected{% endif %}>4220-台南</option>
             <option value="4400" {% if form_data.end_station == '4400' %}selected{% endif %}>4400-高雄</option>
             <option value="7000" {% if form_data.end_station == '7000' %}selected{% endif %}>7000-花蓮</option>
           </select>
@@ -89,13 +89,46 @@ HTML_TEMPLATE = """
             <button type="button" onclick="quickDate(1)" class="hover:underline cursor-pointer">明天</button>
           </div>
         </div>
-        <input type="date" name="search_date" id="search_date" value="{{ form_data.search_date }}" class="w-full bg-white text-gray-800 px-3 py-2 rounded text-sm">
+        <input type="date" name="search_date" id="search_date" value="{{ form_data.search_date }}" class="w-full bg-white text-gray-800 px-3 py-2 rounded text-sm border border-gray-400">
       </div>
 
-      <div class="flex items-center gap-2">
-        <input type="text" value="00:00" readonly class="w-full bg-gray-200 text-gray-500 px-3 py-2 rounded text-sm text-center select-none">
-        <span class="text-xs text-gray-300 shrink-0">至</span>
-        <input type="text" value="23:59" readonly class="w-full bg-gray-200 text-gray-500 px-3 py-2 rounded text-sm text-center select-none">
+      <div>
+        <label class="block text-xs text-gray-300 mb-1">指定時間區間</label>
+        <div class="flex items-center gap-2">
+          <div class="flex flex-1 items-center bg-white rounded px-1 border border-gray-400">
+            <select name="start_hour" id="start_hour" class="w-full text-gray-800 bg-transparent py-1.5 text-sm text-center focus:outline-none">
+              {% for h in range(24) %}
+                {% set h_str = "%02d" | format(h) %}
+                <option value="{{ h_str }}" {% if form_data.start_hour == h_str %}selected{% endif %}>{{ h_str }}</option>
+              {% endfor %}
+            </select>
+            <span class="text-gray-400 text-xs">:</span>
+            <select name="start_minute" id="start_minute" class="w-full text-gray-800 bg-transparent py-1.5 text-sm text-center focus:outline-none">
+              {% for m in range(0, 60, 5) %}
+                {% set m_str = "%02d" | format(m) %}
+                <option value="{{ m_str }}" {% if form_data.start_minute == m_str %}selected{% endif %}>{{ m_str }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <span class="text-xs text-gray-300 shrink-0">至</span>
+
+          <div class="flex flex-1 items-center bg-white rounded px-1 border border-gray-400">
+            <select name="end_hour" id="end_hour" class="w-full text-gray-800 bg-transparent py-1.5 text-sm text-center focus:outline-none">
+              {% for h in range(24) %}
+                {% set h_str = "%02d" | format(h) %}
+                <option value="{{ h_str }}" {% if form_data.end_hour == h_str %}selected{% endif %}>{{ h_str }}</option>
+              {% endfor %}
+            </select>
+            <span class="text-gray-400 text-xs">:</span>
+            <select name="end_minute" id="end_minute" class="w-full text-gray-800 bg-transparent py-1.5 text-sm text-center focus:outline-none">
+              {% for m in range(0, 60, 5) %}
+                {% set m_str = "%02d" | format(m) %}
+                <option value="{{ m_str }}" {% if form_data.end_minute == m_str %}selected{% endif %}>{{ m_str }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -118,10 +151,15 @@ HTML_TEMPLATE = """
 
   {% if train_data is not none %}
     <div class="w-full max-w-md bg-white p-4 rounded-lg shadow-lg">
-      <h3 class="text-gray-800 font-bold mb-3 border-b pb-2 text-sm">查詢結果 (當日直達車)</h3>
+      <div class="flex justify-between items-center mb-3 border-b pb-2">
+        <h3 class="text-gray-800 font-bold text-sm">查詢結果 (當日直達車)</h3>
+        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+          篩選區間: {{ form_data.start_hour }}:{{ form_data.start_minute }} ~ {{ form_data.end_hour }}:{{ form_data.end_minute }}
+        </span>
+      </div>
       <div class="space-y-2 max-h-72 overflow-y-auto text-sm text-gray-700">
         {% if train_data|length == 0 %}
-          <div class="text-center py-4 text-gray-400">當日該區間無直達車次。</div>
+          <div class="text-center py-4 text-gray-400">在此時間區間內無直達車次。</div>
         {% else %}
           {% for train in train_data %}
             <div class="flex justify-between items-center p-2 border-b border-gray-100 hover:bg-gray-50">
@@ -140,19 +178,16 @@ HTML_TEMPLATE = """
   {% endif %}
 
   <script>
-    // 1. 出發與抵達車站對調
     function swapStations() {
       const start = document.getElementById('start_station');
       const end = document.getElementById('end_station');
       const temp = start.value; start.value = end.value; end.value = temp;
     }
 
-    // 2. 車站快捷鍵設定
     function setStation(targetId, value) {
       document.getElementById(targetId).value = value;
     }
 
-    // 3. 日期快捷鍵切換 (0 = 今天, 1 = 明天)
     function quickDate(daysOffset) {
       const d = new Date();
       d.setDate(d.getDate() + daysOffset);
@@ -162,7 +197,6 @@ HTML_TEMPLATE = """
       document.getElementById('search_date').value = `${yyyy}-${mm}-${dd}`;
     }
 
-    // 4. 出發/抵達時間篩選類別切換
     function toggleTimeType(type) {
       document.getElementById('time_type').value = type;
       const btnDept = document.getElementById('btn_dept'); const btnArr = document.getElementById('btn_arr');
@@ -175,17 +209,26 @@ HTML_TEMPLATE = """
       }
     }
 
-    // 5. 前端核心防呆：相同車站攔截 + 開啟轉圈 Loading 狀態
+    // 前端防呆與 Loading 動態控制
     function validateForm() {
       const start = document.getElementById('start_station').value;
       const end = document.getElementById('end_station').value;
-
+      
       if (start === end) {
         alert("出發車站和抵達車站不能相同，請重新選取！");
         return false;
       }
 
-      // 啟用按鈕點擊後的讀取動畫，優化 UX 體驗
+      // 時間範圍防呆檢查
+      const sh = document.getElementById('start_hour').value;
+      const sm = document.getElementById('start_minute').value;
+      const eh = document.getElementById('end_hour').value;
+      const em = document.getElementById('end_minute').value;
+      if (`${sh}:${sm}` > `${eh}:${em}`) {
+        alert("設定的開始時間不能晚於結束時間！");
+        return false;
+      }
+
       document.getElementById('btnSpinner').classList.remove('hidden');
       document.getElementById('btnText').innerText = "正在查詢中...";
       document.getElementById('submitBtn').disabled = true;
@@ -229,13 +272,13 @@ def index():
     train_data = None
     error_msg = None
     
-    # 初始化預設表單狀態
     today_str = datetime.now().strftime('%Y-%m-%d')
+    # ⏳ 預設時間區間：00:00 到 23:59
     form_data = {
-        'start_station': '1000', 
-        'end_station': '3300', 
-        'search_date': today_str, 
-        'time_type': 'departure'
+        'start_station': '1000', 'end_station': '3300', 
+        'search_date': today_str, 'time_type': 'departure',
+        'start_hour': '00', 'start_minute': '00',
+        'end_hour': '23', 'end_minute': '59'
     }
 
     if request.method == 'POST':
@@ -243,8 +286,11 @@ def index():
         form_data['end_station'] = request.form.get('end_station')
         form_data['search_date'] = request.form.get('search_date')
         form_data['time_type'] = request.form.get('time_type')
+        form_data['start_hour'] = request.form.get('start_hour')
+        form_data['start_minute'] = request.form.get('start_minute')
+        form_data['end_hour'] = request.form.get('end_hour')
+        form_data['end_minute'] = request.form.get('end_minute')
 
-        # 📊 後端雙重防呆攔截：若繞過前端傳送相同車站，直接返回不消耗 API 額度
         if form_data['start_station'] == form_data['end_station']:
             error_msg = "出發車站與抵達車站不能相同，請重新選擇。"
             return render_template_string(HTML_TEMPLATE, train_data=train_data, error_msg=error_msg, form_data=form_data)
@@ -268,7 +314,10 @@ def index():
                     start_st = form_data['start_station']
                     end_st = form_data['end_station']
                     
-                    # 💡 常規台鐵車種 ID 對照表 (Fallback 用)
+                    # ⏳ 組合使用者選定的上下限時間字串 (格式如 "08:00", "22:30")
+                    lower_bound = f"{form_data['start_hour']}:{form_data['start_minute']}"
+                    upper_bound = f"{form_data['end_hour']}:{form_data['end_minute']}"
+                    
                     TYPE_MAP = {
                         '1': '自強號', '2': '太魯閣', '3': '普悠瑪', '4': '新自強',
                         '5': '莒光號', '6': '復興號', '7': '區間快車', '10': '區間車'
@@ -281,9 +330,17 @@ def index():
                         end_index = next((i for i, stop in enumerate(stop_times) if stop.get('StationID') == end_st), -1)
                         
                         if start_index != -1 and end_index != -1 and start_index < end_index:
+                            # 取得出發與抵達時間
+                            dept_t = stop_times[start_index].get('DepartureTime', '00:00')
+                            arr_t = stop_times[end_index].get('ArrivalTime', '00:00')
+                            
+                            # ⏳ 【核心時間過濾邏輯】依據使用者的切換（出發/抵達時間），將不符區間的車次直接過濾掉
+                            target_time = arr_t if form_data['time_type'] == 'arrival' else dept_t
+                            if not (lower_bound <= target_time <= upper_bound):
+                                continue
+
                             info = train.get('DailyTrainInfo', train.get('dailyTrainInfo', {}))
-                            if not info: 
-                                info = train
+                            if not info: info = train
                             
                             t_no = info.get('TrainNo') or info.get('trainNo') or train.get('TrainNo') or '000'
                             t_type = "對號車"
@@ -295,17 +352,16 @@ def index():
                                 t_type = t_type_name
                             else:
                                 type_id = str(info.get('TrainTypeID', info.get('trainTypeID', '')))
-                                if type_id in TYPE_MAP: 
-                                    t_type = TYPE_MAP[type_id]
+                                if type_id in TYPE_MAP: t_type = TYPE_MAP[type_id]
+                                else: t_type = info.get('TrainClass', info.get('trainClass', '未知車種'))
                             
                             filtered_trains.append({
                                 'train_type': t_type,
                                 'train_no': t_no,
-                                'dept_time': stop_times[start_index].get('DepartureTime', '00:00'),
-                                'arr_time': stop_times[end_index].get('ArrivalTime', '00:00')
+                                'dept_time': dept_t,
+                                'arr_time': arr_t
                             })
                     
-                    # 排序輸出結果
                     if form_data['time_type'] == 'arrival':
                         train_data = sorted(filtered_trains, key=lambda x: x['arr_time'])
                     else:
