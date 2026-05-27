@@ -44,7 +44,7 @@ HTML_TEMPLATE = """
           <label class="block text-xs text-gray-300 mb-1">抵達站</label>
           <select name="end_station" id="end_station" class="w-full bg-white text-gray-800 px-3 py-2 rounded border border-gray-400 text-sm">
             <option value="1000" {% if form_data.end_station == '1000' %}selected{% endif %}>1000-臺北</option>
-            <option value="1060" {% if font_data.end_station == '1060' %}selected{% endif %}>1060-桃園</option>
+            <option value="1060" {% if form_data.end_station == '1060' %}selected{% endif %}>1060-桃園</option>
             <option value="3300" {% if form_data.end_station == '3300' %}selected{% endif %}>3300-臺中</option>
             <option value="4220" {% if form_data.end_station == '4220' %}selected{% endif %}>4220-台南</option>
             <option value="4400" {% if form_data.end_station == '4400' %}selected{% endif %}>4400-高雄</option>
@@ -137,10 +137,8 @@ HTML_TEMPLATE = """
 
 def get_tdx_token():
     """新制 OIDC 官方通用 Token 交換接口"""
-    # 🎯 新制 OIDC 官方標準入口路由
     auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
     
-    # 強制自動清除從 Vercel 讀取時，可能夾帶的前後空格或換行
     c_id = CLIENT_ID.strip() if CLIENT_ID else ""
     c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
     
@@ -175,7 +173,6 @@ def index():
         form_data['search_date'] = request.form.get('search_date')
         form_data['time_type'] = request.form.get('time_type')
 
-        # 先去拿 Access Token
         token, api_error = get_tdx_token()
         
         if token:
