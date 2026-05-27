@@ -1,10 +1,11 @@
 import os
 import requests
 from flask import Flask, request, render_template_string
+from requests.auth import HTTPBasicAuth
 
 app = Flask(__name__)
 
-# 🔑 請點擊「管理」按鈕，完整複製這兩個欄位
+# 🔑 請點擊「管理」按鈕，完整複製這兩個欄位（確保前後沒有不小心抓到空格）
 CLIENT_ID = os.environ.get('TDX_CLIENT_ID', 'tioplato001-4436c997-a725-410c')
 CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '0d4ec8e5-d9ba-4324-9363-df96dddd05d8')
 
@@ -23,7 +24,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (新制 OIDC 版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (OIDC 直連版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -84,7 +85,7 @@ HTML_TEMPLATE = """
 
   {% if error_msg %}
     <div class="w-full max-w-md bg-red-100 border border-red-400 text-red-700 p-3 rounded text-sm shadow">
-      <p class="font-bold">❌ 驗證狀態提示：</p>
+      <p class="font-bold">❌ 查詢狀態提示：</p>
       <p class="text-xs mt-1 bg-white p-2 rounded font-mono">{{ error_msg }}</p>
     </div>
   {% endif %}
@@ -135,42 +136,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def get_tdx_token():
-    """2026 新制 OIDC 官方標準 Token 驗證機制"""
-    # 🎯 官方規定：新制 OIDC 全球會員統一由 /basic/ 入口進行驗證，不可使用個人自訂路由
-    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
-    
-    # 💡 確保完全清除從瀏覽器複製時，可能不小心抓到的空白、換行或特殊字元
-    c_id = CLIENT_ID.strip() if CLIENT_ID else ""
-    c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
-    
-    if not c_id or "你的" in c_id:
-        return None, "請先在程式碼或 Vercel 後台填入正確的 CLIENT_ID！"
-
-    # 🚀 新制標準參數： grant_type 必須為 client_credentials
-    payload = {
-        'grant_type': 'client_credentials',
-        'client_id': c_id,
-        'client_secret': c_secret
-    }
-    
-    # 傳送表單格式
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    
-    try:
-        response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            return response.json().get('access_token'), None
-        else:
-            # 💡 重點判斷：
-            # 如果此處噴出 HTTP 401 Unauthorized，代表網址完全對了！請去後台重新檢查密碼。
-            # 如果噴出 HTTP 400 Bad Request，代表參數或帳號尚未開通啟用。
-            return None, f"HTTP {response.status_code} - {response.text}"
-            
-    except Exception as e:
-        return None, f"連線至 TDX 驗證伺服器發生異常: {str(e)}"
-
 @app.route('/', methods=['GET', 'POST'])
 def index():
     train_data = None
@@ -183,25 +148,31 @@ def index():
         form_data['search_date'] = request.form.get('search_date')
         form_data['time_type'] = request.form.get('time_type')
 
-        token, api_error = get_tdx_token()
+        # 🎯 繞過 Token！直接呼叫台鐵時刻表端點
+        api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
         
-        if token:
-            api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json'
-            }
+        c_id = CLIENT_ID.strip() if CLIENT_ID else ""
+        c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
+
+        if not c_id or "你的" in c_id or not c_secret or "你的" in c_secret:
+            error_msg = "配置失敗：請點擊 TDX 的『管理』按鈕，將完整的 Client Id 與 Secret 複製貼入程式中。"
+        else:
             try:
-                api_res = requests.get(api_url, headers=headers, timeout=10)
+                # 🚀 關鍵優化：直接將 Client ID / Secret 封裝成 HTTP 基本驗證傳過去
+                api_res = requests.get(
+                    api_url, 
+                    auth=HTTPBasicAuth(c_id, c_secret),
+                    headers={'Accept': 'application/json'},
+                    timeout=10
+                )
+                
                 if api_res.status_code == 200:
                     raw_data = api_res.json().get('TrainTimetables', [])
                     train_data = sorted(raw_data, key=lambda x: x['StopTimes'][0]['DepartureTime'])
                 else:
-                    error_msg = f"時刻表 API 請求失敗 (HTTP {api_res.status_code}): {api_res.text}"
+                    error_msg = f"API 拒絕連線 (HTTP {api_res.status_code})。錯誤內容：{api_res.text}"
             except Exception as e:
-                error_msg = f"連線錯誤: {e}"
-        else:
-            error_msg = f"Token 取得失敗。請確認『管理』內複製出來的密碼是否正確。錯誤訊息：{api_error}"
+                error_msg = f"網路連線異常: {e}"
 
     return render_template_string(HTML_TEMPLATE, train_data=train_data, error_msg=error_msg, form_data=form_data)
 
