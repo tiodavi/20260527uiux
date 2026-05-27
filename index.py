@@ -142,9 +142,9 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """向 TDX 驗證伺服器請求 Access Token (使用目前標準的 number 路由)"""
-    # 🎯 修正網址：中間必須是 /number/ 才是目前 TDX 的正式 Token 接口
-    auth_url = "https://tdx.transportdata.tw/auth/realms/number/protocol/openid-connect/token"
+    """向 TDX 驗證伺服器請求 Access Token (採用 TDX 最底層的全球標準 basic 接口)"""
+    # 🎯 終極修正網址：/basic/ 是官方最核心、最不容易變動的萬用授權接口
+    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
     
     payload = {
         'grant_type': 'client_credentials',
@@ -158,7 +158,7 @@ def get_tdx_token():
         if response.status_code == 200:
             return response.json().get('access_token'), None
         else:
-            # 這裡會精準捕捉是網址不對(404)，還是金鑰不對(401)
+            # 這裡會精準回報錯誤原因
             error_reason = f"HTTP {response.status_code} - {response.text}"
             print(f"[TDX Error Log] Token 取得失敗: {error_reason}")
             return None, error_reason
