@@ -4,9 +4,9 @@ from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
-# 🔑 2026 新制 OIDC 核心：將你的 Client Id 當作 API Key 使用
-# 請點擊「管理」，完整複製 Client Id（包含 tioplato001- 開頭與後面的隨機碼）
-TDX_API_KEY = os.environ.get('TDX_API_KEY', 'tioplato001-4436c997-a725-410c')
+# 🔑 從 Vercel 環境變數讀取新制 OIDC 必備的兩組欄位
+CLIENT_ID = os.environ.get('TDX_CLIENT_ID', '')
+CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '')
 
 # 🎨 完美還原 Figma 設計稿的單一 HTML + Tailwind CSS 範本
 HTML_TEMPLATE = """
@@ -23,7 +23,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (2026 終極金鑰版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (OIDC 標準版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -44,7 +44,7 @@ HTML_TEMPLATE = """
           <label class="block text-xs text-gray-300 mb-1">抵達站</label>
           <select name="end_station" id="end_station" class="w-full bg-white text-gray-800 px-3 py-2 rounded border border-gray-400 text-sm">
             <option value="1000" {% if form_data.end_station == '1000' %}selected{% endif %}>1000-臺北</option>
-            <option value="1060" {% if form_data.end_station == '1060' %}selected{% endif %}>1060-桃園</option>
+            <option value="1060" {% if font_data.end_station == '1060' %}selected{% endif %}>1060-桃園</option>
             <option value="3300" {% if form_data.end_station == '3300' %}selected{% endif %}>3300-臺中</option>
             <option value="4220" {% if form_data.end_station == '4220' %}selected{% endif %}>4220-台南</option>
             <option value="4400" {% if form_data.end_station == '4400' %}selected{% endif %}>4400-高雄</option>
@@ -84,7 +84,7 @@ HTML_TEMPLATE = """
 
   {% if error_msg %}
     <div class="w-full max-w-md bg-red-100 border border-red-400 text-red-700 p-3 rounded text-sm shadow">
-      <p class="font-bold">❌ 查詢狀態提示：</p>
+      <p class="font-bold">❌ 狀態提示：</p>
       <p class="text-xs mt-1 bg-white p-2 rounded font-mono">{{ error_msg }}</p>
     </div>
   {% endif %}
@@ -135,6 +135,34 @@ HTML_TEMPLATE = """
 </html>
 """
 
+def get_tdx_token():
+    """新制 OIDC 官方通用 Token 交換接口"""
+    # 🎯 新制 OIDC 官方標準入口路由
+    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
+    
+    # 強制自動清除從 Vercel 讀取時，可能夾帶的前後空格或換行
+    c_id = CLIENT_ID.strip() if CLIENT_ID else ""
+    c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
+    
+    if not c_id or not c_secret:
+        return None, "環境變數讀取失敗：請確認 Vercel 後台是否已填妥 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET，且專案已執行 Redeploy。"
+
+    payload = {
+        'grant_type': 'client_credentials',
+        'client_id': c_id,
+        'client_secret': c_secret
+    }
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    
+    try:
+        response = requests.post(auth_url, data=payload, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.json().get('access_token'), None
+        else:
+            return None, f"Token 伺服器拒絕 (HTTP {response.status_code}) - 內容：{response.text}"
+    except Exception as e:
+        return None, f"連線驗證伺服器異常: {str(e)}"
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     train_data = None
@@ -147,30 +175,26 @@ def index():
         form_data['search_date'] = request.form.get('search_date')
         form_data['time_type'] = request.form.get('time_type')
 
-        # 🎯 呼叫台鐵時刻表 API
-        api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
+        # 先去拿 Access Token
+        token, api_error = get_tdx_token()
         
-        api_key = TDX_API_KEY.strip() if TDX_API_KEY else ""
-
-        if not api_key or "你的" in api_key:
-            error_msg = "配置失敗：請將 TDX 平台上完整的 Client Id 填入程式的 TDX_API_KEY 中。"
-        else:
+        if token:
+            api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            }
             try:
-                # 🚀 2026 終極解法：將 Client Id 當作萬用密鑰，直接放入 x-api-key 標頭
-                headers = {
-                    'x-api-key': api_key,
-                    'Accept': 'application/json'
-                }
-                
                 api_res = requests.get(api_url, headers=headers, timeout=10)
-                
                 if api_res.status_code == 200:
                     raw_data = api_res.json().get('TrainTimetables', [])
                     train_data = sorted(raw_data, key=lambda x: x['StopTimes'][0]['DepartureTime'])
                 else:
-                    error_msg = f"API 連線失敗 (HTTP {api_res.status_code})。錯誤內容：{api_res.text}"
+                    error_msg = f"時刻表查詢失敗 (HTTP {api_res.status_code}): {api_res.text}"
             except Exception as e:
-                error_msg = f"網路連線異常: {e}"
+                error_msg = f"API 連線異常: {e}"
+        else:
+            error_msg = api_error
 
     return render_template_string(HTML_TEMPLATE, train_data=train_data, error_msg=error_msg, form_data=form_data)
 
