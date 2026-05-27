@@ -136,14 +136,27 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """新制 OIDC 專用 Token 交換機制"""
-    # 🎯 新制 OIDC 的核心認證網址，必須加上 /basic/ 或者是你 ClientId 的前綴
-    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
+    """新制 OIDC 專屬動態路由機制：自動解析 Client ID 前綴，徹底解決 404 迷路問題"""
+    # 確保清除前後空白
+    c_id = CLIENT_ID.strip() if CLIENT_ID else ""
+    c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
+    
+    if not c_id or "你的" in c_id:
+        return None, "請先填入正確的 CLIENT_ID"
+
+    # 🎯 【核心修正】自動從 "tioplato001-xxxx-xxxx" 中切出 "tioplato001"
+    try:
+        realm_prefix = c_id.split('-')[0]
+    except Exception:
+        realm_prefix = "basic" # 備用防錯
+    
+    # 🚀 動態拼裝出你帳號專屬的 TDX 大門網址
+    auth_url = f"https://tdx.transportdata.tw/auth/realms/{realm_prefix}/protocol/openid-connect/token"
     
     payload = {
         'grant_type': 'client_credentials',
-        'client_id': CLIENT_ID.strip(),
-        'client_secret': CLIENT_SECRET.strip()
+        'client_id': c_id,
+        'client_secret': c_secret
     }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
@@ -152,9 +165,10 @@ def get_tdx_token():
         if response.status_code == 200:
             return response.json().get('access_token'), None
         else:
-            return None, f"HTTP {response.status_code} - {response.text}"
+            # 如果這時候網址對了，密碼複製錯，會噴出 HTTP 401 Unauthorized
+            return None, f"HTTP {response.status_code} - {response.text} (嘗試請求網址: {auth_url})"
     except Exception as e:
-        return None, str(e)
+        return None, f"連線異常: {str(e)}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
