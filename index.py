@@ -142,42 +142,49 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """向新版 TDX 驗證伺服器請求 Access Token (2026 最新官方規格)"""
-    # 🎯 全新標準網址：擺脫舊版複雜的 realms 路徑
-    auth_url = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    """TDX 終極防呆驗證：窮舉所有可能網址，並防範複製空白導致的 404/401 錯誤"""
+    global CLIENT_ID, CLIENT_SECRET
     
-    # 部分新制帳號若上者仍噴404，請改用以下官方通用底層網址（取消/TRA/或改用通用路由）
-    # 這裡我們用目前最標準的新版接口：
-    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
+    # 【防呆關鍵】自動清除可能不小心複製到的換行符號或前後空格
+    c_id = CLIENT_ID.strip() if CLIENT_ID else ""
+    c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
     
-    # 💡 註：如果上面兩個你都試過依然 404，代表你的帳號屬於 TDX 新版「OIDC 服務」
-    # 新版 OIDC 的萬用認證網址是下面這一個，我們直接做成自動防呆切換：
+    # 檢查是否根本沒有填入有效金鑰
+    if not c_id or "你的" in c_id or not c_secret or "你的" in c_secret:
+        return None, f"偵測到金鑰尚未正確設定！目前讀取到的 Client ID 長度為: {len(c_id)}"
+
+    # 🎯 2026年 TDX 歷史至今所有新舊、大小寫、各專案類型的 Token 接口全列表
     urls_to_try = [
         "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token",
-        "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+        "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token",
+        "https://tdx.transportdata.tw/auth/realms/number/protocol/openid-connect/token"
     ]
     
     payload = {
         'grant_type': 'client_credentials',
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET
+        'client_id': c_id,
+        'client_secret': c_secret
     }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
-    last_error = ""
+    debug_log = []
+    
     for url in urls_to_try:
         try:
-            response = requests.post(url, data=payload, headers=headers)
+            response = requests.post(url, data=payload, headers=headers, timeout=5)
             if response.status_code == 200:
                 return response.json().get('access_token'), None
-            elif response.status_code != 404:
-                # 如果不是 404（例如 401 密碼錯誤），代表網址對了但金鑰錯了，直接回傳
-                return None, f"網址正確但驗證失敗 (HTTP {response.status_code}) - {response.text}"
-            last_error = f"HTTP {response.status_code} - {response.text}"
-        except Exception as e:
-            last_error = str(e)
             
-    return None, f"所有新舊驗證網址皆嘗試失敗。最後一次錯誤：{last_error}"
+            # 如果不是 404，通常代表網址找對了，是密碼被拒絕
+            if response.status_code != 404:
+                return None, f"網址對了但認證被拒 (HTTP {response.status_code})。訊息: {response.text} (打中網址: {url})"
+                
+            debug_log.append(f"{url.split('/realms/')[1].split('/')[0]} 接口 -> 404")
+        except Exception as e:
+            debug_log.append(f"連線異常: {str(e)}")
+            
+    # 如果全部都 404，極度可能是帳號被鎖、尚未啟用、或是跨網域被 Vercel IP 擋掉
+    return None, f"嘗試了所有認證入口皆回報 404。詳細路徑測試結果: {', '.join(debug_log)} | 目前讀取的 Client_ID 前4碼: {c_id[:4]}... (長度: {len(c_id)})"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
