@@ -4,7 +4,7 @@ from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
-# 🔑 從 Vercel 環境變數讀取新制 OIDC 必備的兩組欄位
+# 🔑 從 Vercel 環境變數讀取你剛剛設定好的乾淨變數
 CLIENT_ID = os.environ.get('TDX_CLIENT_ID', '')
 CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '')
 
@@ -23,7 +23,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (OIDC 標準版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (TDXConnect 正式版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -136,14 +136,15 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """新制 OIDC 官方通用 Token 交換接口"""
-    auth_url = "https://tdx.transportdata.tw/auth/realms/basic/protocol/openid-connect/token"
+    """新制 OIDC 專用核心驗證通道"""
+    # 🎯 2026 新制 OIDC 全球帳號唯一通用 Token 接口網址
+    auth_url = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token"
     
     c_id = CLIENT_ID.strip() if CLIENT_ID else ""
     c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
     
     if not c_id or not c_secret:
-        return None, "環境變數讀取失敗：請確認 Vercel 後台是否已填妥 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET，且專案已執行 Redeploy。"
+        return None, "環境變數讀取失敗：請檢查 Vercel 的 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET 是否有填寫並完成 Redeploy。"
 
     payload = {
         'grant_type': 'client_credentials',
@@ -159,7 +160,7 @@ def get_tdx_token():
         else:
             return None, f"Token 伺服器拒絕 (HTTP {response.status_code}) - 內容：{response.text}"
     except Exception as e:
-        return None, f"連線驗證伺服器異常: {str(e)}"
+        return None, f"連線驗證伺服器發生異常: {str(e)}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -176,6 +177,7 @@ def index():
         token, api_error = get_tdx_token()
         
         if token:
+            # 🚀 拿到了 Token，向台鐵基礎 API 發出火車時刻表查詢
             api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
             headers = {
                 'Authorization': f'Bearer {token}',
