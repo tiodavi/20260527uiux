@@ -1,5 +1,6 @@
 import os
 import requests
+from datetime import datetime
 from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
@@ -165,7 +166,10 @@ def get_tdx_token():
 def index():
     train_data = None
     error_msg = None
-    form_data = {'start_station': '1000', 'end_station': '3300', 'search_date': '2026-05-27', 'time_type': 'departure'}
+    
+    # 🎯 防呆優化：預設日期動態抓取今天，避免寫死歷史日期導致台鐵 API 拒絕
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    form_data = {'start_station': '1000', 'end_station': '3300', 'search_date': today_str, 'time_type': 'departure'}
 
     if request.method == 'POST':
         form_data['start_station'] = request.form.get('start_station')
@@ -176,15 +180,18 @@ def index():
         token, api_error = get_tdx_token()
         
         if token:
-            # 🎯 【關鍵修正】移除了不必要的 /From/ 欄位，還原官方標準 V3 起訖站時刻表網址結構
-            api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
+            # 🚀 標準台鐵 V3 起訖站時刻表路徑 (確保與官方 Swagger 規範完全一致)
+            api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}"
             
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Accept': 'application/json'
             }
+            # 確保傳送正確的 query 參數格式
+            params = {'$format': 'JSON'}
+            
             try:
-                api_res = requests.get(api_url, headers=headers, timeout=10)
+                api_res = requests.get(api_url, headers=headers, params=params, timeout=10)
                 if api_res.status_code == 200:
                     raw_data = api_res.json().get('TrainTimetables', [])
                     train_data = sorted(raw_data, key=lambda x: x['StopTimes'][0]['DepartureTime'])
