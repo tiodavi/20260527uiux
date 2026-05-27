@@ -142,8 +142,12 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """向 TDX 驗證伺服器請求 Access Token，失敗時拋出詳細原因"""
-    auth_url = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    """向 TDX 驗證伺服器請求 Access Token，具備 404 自動切換備用網址機制"""
+    # 網址 A (目前最新標準 OIDC 認證網址)
+    auth_url_primary = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    # 網址 B (部分舊專案或特定權限使用的備用網址)
+    auth_url_backup = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    
     payload = {
         'grant_type': 'client_credentials',
         'client_id': CLIENT_ID,
@@ -151,17 +155,25 @@ def get_tdx_token():
     }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
+    # 先嘗試主要網址
     try:
-        response = requests.post(auth_url, data=payload, headers=headers)
+        response = requests.post(auth_url_primary, data=payload, headers=headers)
         if response.status_code == 200:
             return response.json().get('access_token'), None
-        else:
-            # 抓取 TDX 官方回傳的錯誤 json 或是 text
-            error_reason = f"HTTP {response.status_code} - {response.text}"
-            print(f"[TDX Error Log] Token 取得失敗: {error_reason}")
-            return None, error_reason
+        
+        # 如果主要網址噴 404，自動切換打備用網址
+        if response.status_code == 404:
+            print("[TDX Log] 主要認證網址 404，嘗試切換備用網址...")
+            backup_res = requests.post(auth_url_backup, data=payload, headers=headers)
+            if backup_res.status_code == 200:
+                return backup_res.json().get('access_token'), None
+            else:
+                return None, f"備用網址也失敗 (HTTP {backup_res.status_code}) - {backup_res.text}"
+        
+        return None, f"HTTP {response.status_code} - {response.text}"
+        
     except Exception as e:
-        print(f"[TDX Error Log] 連線至認證伺服器發生異常: {e}")
+        print(f"[TDX Error Log] 連線發生異常: {e}")
         return None, str(e)
 
 @app.route('/', methods=['GET', 'POST'])
