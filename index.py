@@ -4,8 +4,8 @@ from flask import Flask, request, render_template_string
 app = Flask(__name__)
 
 # 🔑 填入你在交通部 TDX 申請的金鑰
-CLIENT_ID = '你的_CLIENT_ID'
-CLIENT_SECRET = '你的_CLIENT_SECRET'
+CLIENT_ID = 'tioplato001-4436c997-a725-410c'
+CLIENT_SECRET = '0d4ec8e5-d9ba-4324-9363-df96dddd05d8'
 
 # 這裡將原本的 index.html 內容改為 Python 字串變數
 HTML_TEMPLATE = """
