@@ -142,11 +142,9 @@ HTML_TEMPLATE = """
 """
 
 def get_tdx_token():
-    """向 TDX 驗證伺服器請求 Access Token，具備 404 自動切換備用網址機制"""
-    # 網址 A (目前最新標準 OIDC 認證網址)
-    auth_url_primary = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
-    # 網址 B (部分舊專案或特定權限使用的備用網址)
-    auth_url_backup = "https://tdx.transportdata.tw/auth/realms/TRA/protocol/openid-connect/token"
+    """向 TDX 驗證伺服器請求 Access Token (使用目前標準的 number 路由)"""
+    # 🎯 修正網址：中間必須是 /number/ 才是目前 TDX 的正式 Token 接口
+    auth_url = "https://tdx.transportdata.tw/auth/realms/number/protocol/openid-connect/token"
     
     payload = {
         'grant_type': 'client_credentials',
@@ -155,25 +153,17 @@ def get_tdx_token():
     }
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     
-    # 先嘗試主要網址
     try:
-        response = requests.post(auth_url_primary, data=payload, headers=headers)
+        response = requests.post(auth_url, data=payload, headers=headers)
         if response.status_code == 200:
             return response.json().get('access_token'), None
-        
-        # 如果主要網址噴 404，自動切換打備用網址
-        if response.status_code == 404:
-            print("[TDX Log] 主要認證網址 404，嘗試切換備用網址...")
-            backup_res = requests.post(auth_url_backup, data=payload, headers=headers)
-            if backup_res.status_code == 200:
-                return backup_res.json().get('access_token'), None
-            else:
-                return None, f"備用網址也失敗 (HTTP {backup_res.status_code}) - {backup_res.text}"
-        
-        return None, f"HTTP {response.status_code} - {response.text}"
-        
+        else:
+            # 這裡會精準捕捉是網址不對(404)，還是金鑰不對(401)
+            error_reason = f"HTTP {response.status_code} - {response.text}"
+            print(f"[TDX Error Log] Token 取得失敗: {error_reason}")
+            return None, error_reason
     except Exception as e:
-        print(f"[TDX Error Log] 連線發生異常: {e}")
+        print(f"[TDX Error Log] 連線至認證伺服器發生異常: {e}")
         return None, str(e)
 
 @app.route('/', methods=['GET', 'POST'])
