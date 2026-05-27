@@ -1,13 +1,12 @@
 import os
 import requests
 from flask import Flask, request, render_template_string
-from requests.auth import HTTPBasicAuth
 
 app = Flask(__name__)
 
-# 🔑 請點擊「管理」按鈕，完整複製這兩個欄位（確保前後沒有不小心抓到空格）
-CLIENT_ID = os.environ.get('TDX_CLIENT_ID', 'tioplato001-4436c997-a725-410c')
-CLIENT_SECRET = os.environ.get('TDX_CLIENT_SECRET', '0d4ec8e5-d9ba-4324-9363-df96dddd05d8')
+# 🔑 2026 新制 OIDC 核心：將你的 Client Id 當作 API Key 使用
+# 請點擊「管理」，完整複製 Client Id（包含 tioplato001- 開頭與後面的隨機碼）
+TDX_API_KEY = os.environ.get('TDX_API_KEY', 'tioplato001-4436c997-a725-410c')
 
 # 🎨 完美還原 Figma 設計稿的單一 HTML + Tailwind CSS 範本
 HTML_TEMPLATE = """
@@ -24,7 +23,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (OIDC 直連版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (2026 終極金鑰版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -148,29 +147,28 @@ def index():
         form_data['search_date'] = request.form.get('search_date')
         form_data['time_type'] = request.form.get('time_type')
 
-        # 🎯 繞過 Token！直接呼叫台鐵時刻表端點
+        # 🎯 呼叫台鐵時刻表 API
         api_url = f"https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/OD/From/{form_data['start_station']}/To/{form_data['end_station']}/{form_data['search_date']}?$format=JSON"
         
-        c_id = CLIENT_ID.strip() if CLIENT_ID else ""
-        c_secret = CLIENT_SECRET.strip() if CLIENT_SECRET else ""
+        api_key = TDX_API_KEY.strip() if TDX_API_KEY else ""
 
-        if not c_id or "你的" in c_id or not c_secret or "你的" in c_secret:
-            error_msg = "配置失敗：請點擊 TDX 的『管理』按鈕，將完整的 Client Id 與 Secret 複製貼入程式中。"
+        if not api_key or "你的" in api_key:
+            error_msg = "配置失敗：請將 TDX 平台上完整的 Client Id 填入程式的 TDX_API_KEY 中。"
         else:
             try:
-                # 🚀 關鍵優化：直接將 Client ID / Secret 封裝成 HTTP 基本驗證傳過去
-                api_res = requests.get(
-                    api_url, 
-                    auth=HTTPBasicAuth(c_id, c_secret),
-                    headers={'Accept': 'application/json'},
-                    timeout=10
-                )
+                # 🚀 2026 終極解法：將 Client Id 當作萬用密鑰，直接放入 x-api-key 標頭
+                headers = {
+                    'x-api-key': api_key,
+                    'Accept': 'application/json'
+                }
+                
+                api_res = requests.get(api_url, headers=headers, timeout=10)
                 
                 if api_res.status_code == 200:
                     raw_data = api_res.json().get('TrainTimetables', [])
                     train_data = sorted(raw_data, key=lambda x: x['StopTimes'][0]['DepartureTime'])
                 else:
-                    error_msg = f"API 拒絕連線 (HTTP {api_res.status_code})。錯誤內容：{api_res.text}"
+                    error_msg = f"API 連線失敗 (HTTP {api_res.status_code})。錯誤內容：{api_res.text}"
             except Exception as e:
                 error_msg = f"網路連線異常: {e}"
 
