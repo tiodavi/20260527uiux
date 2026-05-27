@@ -24,7 +24,7 @@ HTML_TEMPLATE = """
   <form action="/" method="POST" class="w-full max-w-md bg-[#3A3A3A] text-white p-4 rounded-lg shadow-lg font-sans">
     
     <div class="bg-[#1D4ED8] px-4 py-2 rounded-t-md flex justify-between items-center mb-4">
-      <span class="text-sm font-bold">列車時刻查詢 (終極穩健版)</span>
+      <span class="text-sm font-bold">列車時刻查詢 (正式完美版)</span>
       <span class="text-xs">▼</span>
     </div>
 
@@ -179,7 +179,6 @@ def index():
         token, api_error = get_tdx_token()
         
         if token:
-            # 🎯 終極解法：使用 TDX 最核心、絕對不可能 404 的當日時刻表接口
             api_url = "https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/Today"
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -197,25 +196,35 @@ def index():
                     start_st = form_data['start_station']
                     end_st = form_data['end_station']
                     
-                    # 🚀 在 Python 內部精準過濾「直達該區間」的車次
                     for train in all_timetables:
                         stop_times = train.get('StopTimes', [])
                         
-                        # 找出出發站與抵達站的 index
                         start_index = next((i for i, stop in enumerate(stop_times) if stop.get('StationID') == start_st), -1)
                         end_index = next((i for i, stop in enumerate(stop_times) if stop.get('StationID') == end_st), -1)
                         
-                        # 必須兩個車站都有停，且出發站順序在抵達站之前（直達）
                         if start_index != -1 and end_index != -1 and start_index < end_index:
+                            # 🎯 【關鍵欄位修正】相容於 Today 總表的深層欄位取值邏輯
+                            info = train.get('DailyTrainInfo', {})
+                            
+                            # 部分接口車次號碼為 'trainNo' 或 'TrainNo'，做個相容防呆
+                            t_no = info.get('trainNo') or info.get('TrainNo') or '000'
+                            
+                            # 取得車種名稱的中文 (自強、莒光、區間等)
+                            t_type_name = info.get('TrainTypeName', {})
+                            t_type = t_type_name.get('Zh_tw') if isinstance(t_type_name, dict) else info.get('TrainTypeID', '未知車型')
+                            
                             filtered_trains.append({
-                                'train_type': train.get('DailyTrainInfo', {}).get('TrainTypeName', {}).get('Zh_tw', '未知車型'),
-                                'train_no': train.get('DailyTrainInfo', {}).get('TrainNo', '000'),
+                                'train_type': t_type,
+                                'train_no': t_no,
                                 'dept_time': stop_times[start_index].get('DepartureTime', '00:00'),
                                 'arr_time': stop_times[end_index].get('ArrivalTime', '00:00')
                             })
                     
-                    # 依照出發時間排序
-                    train_data = sorted(filtered_trains, key=lambda x: x['dept_time'])
+                    # 依出發時間或抵達時間排序
+                    if form_data['time_type'] == 'arrival':
+                        train_data = sorted(filtered_trains, key=lambda x: x['arr_time'])
+                    else:
+                        train_data = sorted(filtered_trains, key=lambda x: x['dept_time'])
                 else:
                     error_msg = f"時刻表查詢失敗 (HTTP {api_res.status_code}): {api_res.text}"
             except Exception as e:
